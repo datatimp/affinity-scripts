@@ -6,16 +6,16 @@ have built in. Each one opens a small dialog with a live preview, makes clean ve
 
 Affinity's scripting is in beta, so a future Affinity update may need a script updated too.
 
+## Scripts
+
 | Script | What it does | Version |
 |---|---|---|
 | [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.0 |
 | [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.1 |
-| [Rosette Halftone](https://github.com/datatimp/rosette-halftone/tree/main/affinity) | Turns an object into a black halftone of true vector dots | 1.0 |
+| [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.0 |
 
-Rosette Halftone lives in its own repo, [rosette-halftone](https://github.com/datatimp/rosette-halftone),
-next to the command-line tool whose dot math it shares. Its `.afscript` file and JavaScript are in
-that repo's [`affinity`](https://github.com/datatimp/rosette-halftone/tree/main/affinity) folder,
-and both install the same way as the scripts here.
+Block Shadow and Sticker Outline are in this repo. Rosette Halftone lives in its own [repo](github.com/datatimp/rosette-halftone/tree/main/affinity), next to
+the command-line tool whose dot math it shares.
 
 ## Install
 
@@ -120,13 +120,29 @@ bands along every curve plus circles at the corners and ends, all joined with Ad
   the offset to join them.
 - The outline doesn't update when the artwork changes. Delete it and run the script again.
 
+## Rosette Halftone
+
+Turns the selected object into a black halftone made of true vector circles, using the dot math of
+[Rosette](https://github.com/datatimp/rosette-halftone), a halftone tool for the command line. Every
+dot is an exact circle, so Affinity's vector tools keep working on the result, and a shape's edge
+never gets the border of heavy dots that Affinity's Live Halftone gives it.
+
+The dialog sets the cell size, screen angle, gamma and minimum dot size, with a live preview, and
+makes the dots as one compound shape or as separate dots in a group.
+
+Its `.afscript` file, JavaScript and full instructions are in the
+[`affinity`](https://github.com/datatimp/rosette-halftone/tree/main/affinity) folder of the
+rosette-halftone repo. It installs the same two ways as the scripts here.
+
 ## Grouping
 
-Both scripts group their result with the objects you selected. If the selected objects weren't
+Block Shadow and Sticker Outline group their result with the objects you selected. If the selected objects weren't
 next to each other in the Layers panel, grouping brings them together, and anything unselected
 that sat between them ends up outside the group. That's how Affinity's own Group works.
 
 ## Repo layout
+
+This layout covers Block Shadow and Sticker Outline; Rosette Halftone's files are in its own repo.
 
 ```
 affinity-scripts/
@@ -136,7 +152,7 @@ affinity-scripts/
 └── README.md
 ```
 
-The JavaScript in `src/` is the source: a change is made there first, then imported into Affinity
+The JavaScript in `src/` is the source: a change is made there first, then pasted into Affinity
 and exported again to `afscript/`. Each script's version is in the comment at the top of its file.
 
 ## License
