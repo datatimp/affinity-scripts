@@ -10,11 +10,12 @@ Affinity's scripting is in beta, so a future Affinity update may need a script u
 
 | Script | What it does | Version |
 |---|---|---|
-| [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.0 |
-| [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.1 |
+| [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.5 |
+| [Make Pill](#make-pill) | A rounded pill with set padding around its text, or refits selected pills | 1.0 |
 | [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.0 |
+| [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.1 |
 
-Block Shadow and Sticker Outline are in this repo. Rosette Halftone lives in its own [repo](github.com/datatimp/rosette-halftone/tree/main/affinity), next to
+Block Shadow, Make Pill and Sticker Outline are in this repo. Rosette Halftone lives in its own [repo](https://github.com/datatimp/rosette-halftone/tree/main/affinity), next to
 the command-line tool whose dot math it shares.
 
 ## Install
@@ -78,19 +79,90 @@ flat on.
 2. Run **Block Shadow**. The dialog previews the shadow live on the canvas:
    - **Depth:** how far the shadow reaches.
    - **Direction (°):** which way it falls. 0° is right, 90° is up, -45° is down and to the right.
+   - **Gap:** an empty band between the object and its shadow, 0 by default. It can't be more
+     than the depth. See below.
    - **Colour:** the shadow's colour.
 3. Click **OK**. Each object is grouped with its shadow, a curve named "Block shadow" at the
    bottom of the group.
 
+**The gap** is the same width on every edge, whatever the direction, and its corners follow the
+object's own: a sharp corner keeps a sharp (mitered) corner, a rounded one stays rounded. A very
+sharp point, like a thin star tip, would push its corner far out, so past four times the gap it's
+cut off flat instead, like Affinity's miter limit on strokes. The gap is empty, not white, so
+whatever is behind shows through it.
+
 **How it works:** the shadow is the exact area the object's outline sweeps as it slides in the
 shadow's direction, built from the outline's own curves and joined with Add. It's one clean
-shape, not a stack of copies, so the edges never step.
+shape, not a stack of copies, so the edges never step. For a gap, the object is grown outward by
+the gap, with mitered corners, and that grown shape is cut out of the shadow with Subtract.
 
 **Limits:**
 
 - Strokes don't cast a shadow, only fills. To shadow a thick stroke, use Layer ▸ Expand Stroke
   first.
 - The shadow doesn't update when the object changes. Delete it and run the script again.
+
+## Make Pill
+
+Makes a pill, a rounded shape with a line of text on it, with exact padding between the text and
+the edge, like padding in web and UI design. Affinity doesn't keep a shape fitted to its text, so
+the same script also refits pills after you change their words, font or size.
+
+**To make a pill:**
+
+1. Select nothing, or select a piece of text whose font and size the pill should copy.
+2. Run **Make Pill**. The dialog previews the pill live on the canvas:
+   - **Text:** the pill's words. If you selected text, it starts with that text's words.
+   - **Left**, **Right**, **Top** and **Bottom:** the padding on each side, in pixels.
+3. Click **OK**. A group named "Pill" appears: a fully rounded rectangle with a 2 px black stroke
+   and no fill, and the text, centred, on top. With text selected, it goes just below that text;
+   otherwise it goes in the middle of the spread, in Affinity's default text style.
+
+The rectangle is an ordinary shape, so you can change its corners, fill and stroke afterwards.
+
+**To refit pills:** select one or more pills and run **Make Pill**. The dialog is the same without
+the Text box. Click **OK** and each pill's shape resizes around its text; the text doesn't move. A
+pill is a group of one shape and one piece of text, artistic or frame. A shape and a text selected
+on their own, ungrouped, count as one pill too. Anything else in the selection is left alone, and
+a message names what was skipped.
+
+**How a pill is fitted:**
+
+- **Width:** the letters themselves plus the left and right padding, so every pill gets the same
+  visible gap whatever its words.
+- **Height:** the font's cap height plus the top and bottom padding. The font is measured, not
+  the word, so every pill with the same font and size comes out the same height.
+- **Up and down:** the shape is centred on the letters, descenders included, just as Affinity's
+  Align Vertical Centre centres text. A word in capitals gets the top and bottom padding exactly;
+  a word with descenders, like "Vegan", rises a little so it's centred as a whole.
+
+The padding runs to the shape's path, and a stroke sits half inside it.
+
+**How it works:** Affinity's scripting doesn't report a font's cap height, so the script measures
+it. It adds a few hidden test texts in the pill's font and size, reads
+their outlines, and undoes the step. Refitting scales the shape, and Affinity redraws a shape from
+its settings, so round ends stay round.
+
+**Limits:**
+
+- One line of text per pill.
+- Rotated or skewed pills are skipped.
+- Text typed into a shape itself is skipped, because Affinity places that text, not the script.
+  Select it and run **Make Pill** to make a new pill in the same font instead.
+
+## Rosette Halftone
+
+Turns the selected object into a black halftone made of true vector circles, using the dot math of
+[Rosette](https://github.com/datatimp/rosette-halftone), a halftone tool for the command line. Every
+dot is an exact circle, so Affinity's vector tools keep working on the result, and a shape's edge
+never gets the border of heavy dots that Affinity's Live Halftone gives it.
+
+The dialog sets the cell size, screen angle, gamma and minimum dot size, with a live preview, and
+makes the dots as one compound shape or as separate dots in a group.
+
+Its `.afscript` file, JavaScript and full instructions are in the
+[`affinity`](https://github.com/datatimp/rosette-halftone/tree/main/affinity) folder of the
+rosette-halftone repo. It installs the same two ways as the scripts here.
 
 ## Sticker Outline
 
@@ -120,20 +192,6 @@ bands along every curve plus circles at the corners and ends, all joined with Ad
   the offset to join them.
 - The outline doesn't update when the artwork changes. Delete it and run the script again.
 
-## Rosette Halftone
-
-Turns the selected object into a black halftone made of true vector circles, using the dot math of
-[Rosette](https://github.com/datatimp/rosette-halftone), a halftone tool for the command line. Every
-dot is an exact circle, so Affinity's vector tools keep working on the result, and a shape's edge
-never gets the border of heavy dots that Affinity's Live Halftone gives it.
-
-The dialog sets the cell size, screen angle, gamma and minimum dot size, with a live preview, and
-makes the dots as one compound shape or as separate dots in a group.
-
-Its `.afscript` file, JavaScript and full instructions are in the
-[`affinity`](https://github.com/datatimp/rosette-halftone/tree/main/affinity) folder of the
-rosette-halftone repo. It installs the same two ways as the scripts here.
-
 ## Grouping
 
 Block Shadow and Sticker Outline group their result with the objects you selected. If the selected objects weren't
@@ -142,7 +200,8 @@ that sat between them ends up outside the group. That's how Affinity's own Group
 
 ## Repo layout
 
-This layout covers Block Shadow and Sticker Outline; Rosette Halftone's files are in its own repo.
+This layout covers Block Shadow, Make Pill and Sticker Outline; Rosette Halftone's files are in
+its own repo.
 
 ```
 affinity-scripts/
