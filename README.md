@@ -206,6 +206,9 @@ bands along every curve plus circles at the corners and ends, all joined with Ad
 - Parts of the artwork that are further apart than twice the offset stay separate pieces. Raise
   the offset to join them.
 - The outline doesn't update when the artwork changes. Delete it and run the script again.
+- The in-between steps of a blend aren't real objects, so the script doesn't see them. Convert
+  the blend group to curves first (**Vector > Convert to Curves**, or Ctrl+Enter), then run the
+  script.
 - The outline has far more nodes than an offset path drawn by hand. Affinity's scripting has no
   offset path or Expand Stroke command, so the script builds the outline from many small pieces,
   and each joined edge leaves nodes behind.
