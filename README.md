@@ -10,7 +10,7 @@ Affinity's scripting is in beta, so a future Affinity update may need a script u
 
 | Script | What it does | Version |
 |---|---|---|
-| [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.5 |
+| [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.6 |
 | [Make Pill](#make-pill) | A rounded pill with set padding around its text, or refits selected pills | 1.0 |
 | [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.0 |
 | [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.1 |
@@ -84,6 +84,10 @@ flat on.
    - **Colour:** the shadow's colour.
 3. Click **OK**. Each object is grouped with its shadow, a curve named "Block shadow" at the
    bottom of the group.
+
+**Changing a shadow:** run Block Shadow again on the group, on the object inside it or on the old
+shadow. The old shadow is replaced inside the same group, so groups don't pile up inside each
+other. Hidden objects in the group don't count: they cast no shadow.
 
 **The gap** is the same width on every edge, whatever the direction, and its corners follow the
 object's own: a sharp corner keeps a sharp (mitered) corner, a rounded one stays rounded. A very

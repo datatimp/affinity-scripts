@@ -2,7 +2,7 @@
 Block Shadow for Affinity: adds a solid, flat block shadow (a "long shadow") behind each selected
 object.
 
-Version 1.5
+Version 1.6
 Copyright (C) 2026 datatimp
 https://github.com/datatimp/affinity-scripts
 SPDX-License-Identifier: AGPL-3.0-or-later
@@ -266,8 +266,11 @@ const NAME = "Block shadow";
 const WORKING = "Block shadow (working)";
 
 // Every closed outline of the node in spread coordinates, as PolyCurves. Containers (groups)
-// contribute their children's outlines.
+// contribute their children's outlines. Hidden objects don't show, so they cast no shadow and
+// don't push the gap out (a hidden old shadow in a group once did).
 function collectOutlines(node, out) {
+    if (node.isVisible === false)
+        return out;
     const ci = node.curvesInterface;
     if (ci) {
         const ppc = ci.polyPolyCurves;
@@ -284,6 +287,33 @@ function collectOutlines(node, out) {
         for (const child of node.children)
             collectOutlines(child, out);
     return out;
+}
+
+// The group a Block Shadow run made, if `node` is one or sits directly in one: {group, old}, where
+// old holds the group's existing Block shadow curves. Running the script again on such a group
+// (or on its object, or its old shadow) replaces the shadow inside it instead of wrapping the
+// group in yet another group. Null otherwise.
+function shadowGroupOf(node) {
+    const oldShadows = (group) => [...(group.children ?? [])].filter(c => c.description == NAME);
+    if (node.children && oldShadows(node).length)
+        return { group: node, old: oldShadows(node) };
+    const parent = node.parent;
+    if (parent && !parent.isSpreadNode && oldShadows(parent).length)
+        return { group: parent, old: oldShadows(parent) };
+    return null;
+}
+
+// The source for one selected node: {node, outlines, old}. A node already in a Block Shadow group
+// becomes that whole group, its art being everything in it except the old shadow (`old`).
+function sourceFor(node) {
+    const sg = shadowGroupOf(node);
+    if (!sg)
+        return { node, outlines: collectOutlines(node, []), old: [] };
+    const outlines = [];
+    for (const child of sg.group.children)
+        if (!sg.old.some(o => o.isSameNode(child)))
+            collectOutlines(child, outlines);
+    return { node: sg.group, outlines, old: sg.old };
 }
 
 // A curve's segments as [start, c1, c2, end] arrays. A fill closes an open curve with a straight
@@ -432,13 +462,20 @@ function main() {
         alert("Select one or more objects to give a block shadow.");
         return;
     }
-    const sources = nodes.map(node => ({ node, outlines: collectOutlines(node, []) }));
+    // Two selected things in the same Block Shadow group (say the object and its old shadow) are
+    // one source.
+    const sources = [];
+    for (const node of nodes) {
+        const source = sourceFor(node);
+        if (!sources.some(s => s.node.isSameNode(source.node)))
+            sources.push(source);
+    }
     if (sources.every(s => s.outlines.length == 0)) {
         alert("The selection has no outlines to cast a shadow (images and adjustments don't).");
         return;
     }
 
-    // A default depth of a tenth of the selection's size.
+    // A default depth of a tenth of the selection's size, rounded to a whole pixel.
     let size = 0;
     for (const node of nodes) {
         const box = node.getSpreadBaseBox(false);
@@ -448,8 +485,8 @@ function main() {
     const dlg = Dialog.create("Block Shadow");
     const col = dlg.addColumn();
     const shape = col.addGroup("Shadow");
-    const depth = shape.addUnitValueEditor("Depth", UnitType.Pixel, doc.units, Math.max(1, size / 10), 0)
-        .setNoMaxValue();
+    const depth = shape.addUnitValueEditor("Depth", UnitType.Pixel, doc.units,
+        Math.max(1, Math.round(size / 10)), 0).setNoMaxValue();
     const angle = shape.addUnitValueEditor("Direction (°)", UnitType.Number, UnitType.Number, -45, -180, 180)
         .setPrecision(1).setShowPopupSlider(true);
     const gap = shape.addUnitValueEditor("Gap", UnitType.Pixel, doc.units, 0, 0).setNoMaxValue();
@@ -463,6 +500,8 @@ function main() {
     });
     // Without a gap, the preview is the joined pieces behind each object, shown without touching
     // the document. With one, the finished shadows are worked out (each step undone) and shown.
+    // The old preview is cleared first: without that, the first preview vanishes when the dialog
+    // opens and nothing shows until a value changes.
     const preview = () => {
         // A gap as deep as the shadow leaves nothing of it, so the gap can't pass the depth: a
         // bigger gap is pulled back, and lowering the depth pulls the gap down with it.
@@ -472,8 +511,9 @@ function main() {
         const s = settings();
         const cmd = s.gap > 0 ? finishedPreviewCommand(finishedShadows(doc, sources, s), s.colour)
             : shadowCommand(sources, s);
+        // An old shadow being replaced is left out of the preview, as it will be on OK.
         if (cmd)
-            doc.executeCommand(cmd, true);
+            doc.executeCommand(withoutOldShadows(doc, sources, cmd), true);
     };
     dlg.onControlValueChangedHandler = preview;
     preview();
@@ -489,7 +529,21 @@ function main() {
             : "A depth of zero casts no shadow.");
         return;
     }
-    doc.executeCommand(groupedCommand(doc, shadows, s.colour), false);
+    doc.executeCommand(groupedCommand(doc, shadows, s.colour, sources), false);
+}
+
+// `cmd` followed by deleting every old shadow the sources replace, as one command. Just `cmd` when
+// nothing is being replaced.
+function withoutOldShadows(doc, sources, cmd) {
+    const { CompoundCommandBuilder, DocumentCommand } = require('/commands.js');
+    const { Selection } = require('/selections.js');
+    const old = sources.flatMap(s => s.old);
+    if (old.length == 0)
+        return cmd;
+    const compound = CompoundCommandBuilder.create();
+    compound.addCommand(cmd);
+    compound.addCommand(DocumentCommand.createDeleteSelection(Selection.create(doc, old), false));
+    return compound.createCommand();
 }
 
 // Adds each item's polys ({node, polys}) behind its node, joins them with Add or Subtract (the
@@ -615,8 +669,9 @@ function finishedPreviewCommand(shadows, colour) {
 }
 
 // The command that groups each object with its shadow, the shadow (named NAME, in `colour`) at
-// the bottom of the group, all in one undo step.
-function groupedCommand(doc, shadows, colour) {
+// the bottom of the group, all in one undo step. A source that is already a Block Shadow group
+// keeps its group: its old shadow is deleted and the new one goes in at the bottom.
+function groupedCommand(doc, shadows, colour, sources) {
     const { BlendMode } = require('affinity:common');
     const { AddChildNodesCommandBuilder, CompoundCommandBuilder, DocumentCommand } = require('/commands.js');
     const { InsertionMode } = require('/document.js');
@@ -632,12 +687,19 @@ function groupedCommand(doc, shadows, colour) {
     for (const { node, poly } of shadows) {
         const def = PolyCurveNodeDefinition.create(poly, fill, none, noLine, none);
         def.userDescription = NAME;
-        // With no target, nodes go into the selected container, which is the new group. Its
-        // Inside_AtFront is the front of its child list, which is the bottom of the stack.
+        // Inside_AtFront is the front of a group's child list, which is the bottom of the stack.
         const builder = AddChildNodesCommandBuilder.create();
         builder.setInsertionMode(InsertionMode.Inside_AtFront);
         builder.addNode(def);
-        compound.addCommand(DocumentCommand.createGroupNodes(Selection.create(doc, [node])));
+        const old = sources.find(s => s.node.isSameNode(node))?.old ?? [];
+        if (old.length) {
+            compound.addCommand(DocumentCommand.createDeleteSelection(Selection.create(doc, old), false));
+            builder.setInsertionTarget(node);
+        }
+        else {
+            // With no target, the shadow goes into the selected container: the new group.
+            compound.addCommand(DocumentCommand.createGroupNodes(Selection.create(doc, [node])));
+        }
         compound.addCommand(builder.createCommand(false));
     }
     return compound.createCommand();
