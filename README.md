@@ -10,10 +10,10 @@ Affinity's scripting is in beta, so a future Affinity update may need a script u
 
 | Script | What it does | Version |
 |---|---|---|
-| [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.6 |
+| [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.6.1 |
 | [Make Pill](#make-pill) | A rounded pill with set padding around its text, or refits selected pills | 1.0 |
 | [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.0 |
-| [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.1 |
+| [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.2.1 |
 
 Block Shadow, Make Pill and Sticker Outline are in this repo. Rosette Halftone lives in its own [repo](https://github.com/datatimp/rosette-halftone/tree/main/affinity), next to
 the command-line tool whose dot math it shares.
@@ -71,6 +71,8 @@ Select the object or artwork, then click the script on the **Scripts Library** p
 
 ## Block Shadow
 
+![The words "Block Shadow" and a star, each with a dark block shadow running down and to the right](images/block-shadow.webp)
+
 Adds a solid shadow that runs from each object's edge in one direction, like a 3D extrusion seen
 flat on.
 
@@ -104,9 +106,11 @@ the gap, with mitered corners, and that grown shape is cut out of the shadow wit
 
 - Strokes don't cast a shadow, only fills. To shadow a thick stroke, use Layer ▸ Expand Stroke
   first.
-- The shadow doesn't update when the object changes. Delete it and run the script again.
+- The shadow doesn't update when the object changes. Run the script again to replace it.
 
 ## Make Pill
+
+![The words "Make Pill" on a rounded pill shape with even padding around the text](images/make-pill.webp)
 
 Makes a pill, a rounded shape with a line of text on it, with exact padding between the text and
 the edge, like padding in web and UI design. Affinity doesn't keep a shape fitted to its text, so
@@ -170,21 +174,28 @@ rosette-halftone repo. It installs the same two ways as the scripts here.
 
 ## Sticker Outline
 
+![The words "Sticker Outline" with a heart and a swoosh, all inside one white sticker outline](images/sticker-outline.webp)
+
 Draws the shape you'd cut a sticker along: everything within a set distance of your artwork, with
 round corners, as one solid piece.
 
 1. Select the artwork: any number of objects or groups.
 2. Run **Sticker Outline**. The dialog previews the outline live on the canvas:
    - **Offset:** how far the outline sits outside the artwork.
-   - **Fill holes:** on by default. Fills the counters of letters, the gaps between parts and any
-     other holes, so the sticker is solid. The preview shows the holes; they're filled when you
-     click OK.
+   - **Fill holes:** off by default. Fills the counters of letters, the gaps between parts and any
+     other holes, so the sticker is solid.
    - **Colour:** the outline's colour, white by default.
 3. Click **OK**. The artwork and the outline are grouped together, with the outline, a curve named
    "Sticker outline", at the bottom of the group.
 
+**Only the selection is outlined.** Anything you haven't selected is left alone, including an older
+sticker outline. To layer outlines, select an outline along with the artwork (or the group holding
+both) and run the script again with a larger offset: the new outline goes around both.
+
 **What counts as artwork:** every filled shape, curve and piece of text, and every visible stroke
-at its full width, whatever its alignment. An open line with only a stroke, like a spiral, gets an
+at its full width, whatever its alignment. A stroke with a pressure profile, tapered in the
+Stroke panel or drawn with a pen, counts at the width the pressure gives it along its length. An
+open line with only a stroke, like a spiral, gets an
 outline around the stroke. Images and adjustments are skipped.
 
 **How it works:** the outline is everything within the offset of the artwork, built from short
@@ -195,6 +206,9 @@ bands along every curve plus circles at the corners and ends, all joined with Ad
 - Parts of the artwork that are further apart than twice the offset stay separate pieces. Raise
   the offset to join them.
 - The outline doesn't update when the artwork changes. Delete it and run the script again.
+- The outline has far more nodes than an offset path drawn by hand. Affinity's scripting has no
+  offset path or Expand Stroke command, so the script builds the outline from many small pieces,
+  and each joined edge leaves nodes behind.
 
 ## Grouping
 
@@ -212,7 +226,8 @@ affinity-scripts/
 ├── afscript/   scripts exported from Affinity, ready to import
 ├── src/        the same scripts as JavaScript source
 ├── LICENSE
-└── README.md
+├── README.md
+└── ROADMAP.md  planned changes and what they're waiting on
 ```
 
 The JavaScript in `src/` is the source: a change is made there first, then pasted into Affinity

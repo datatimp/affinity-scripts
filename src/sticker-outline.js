@@ -2,19 +2,20 @@
 Sticker Outline for Affinity: draws one solid sticker (die-cut) shape behind the selection, grown
 outward from the artwork by a set distance.
 
-Version 1.1
+Version 1.2.1
 Copyright (C) 2026 datatimp
 https://github.com/datatimp/affinity-scripts
 SPDX-License-Identifier: AGPL-3.0-or-later
 
 Select the artwork (any number of objects or groups) and run the script. A dialog sets the
-offset, the colour and whether holes are filled, with a live preview (holes show in the preview
-and are filled on OK); OK groups the artwork with one curve object named "Sticker outline" at
-the bottom of the group, in one undo step. The artwork itself is not changed.
+offset, the colour and whether holes are filled, with a live preview; OK groups the artwork with one curve object named "Sticker outline" at
+the bottom of the group, in one undo step. The artwork itself is not changed. Only the selection is
+outlined; nothing else in the document is looked at or changed.
 
 What counts as artwork: every filled shape, curve and text, and every visible stroke at its full
-width (centre, inside and outside alignment are all honoured). Open lines with only a stroke
-count as the stroke. Images and adjustments are skipped.
+width (centre, inside and outside alignment are all honoured). A stroke with a pressure profile,
+tapered or drawn with a pen, counts at the width the pressure gives it at each point. Open lines
+with only a stroke count as the stroke. Images and adjustments are skipped.
 
 How it works: the outline is everything within the offset distance of the artwork (the Minkowski
 sum of the artwork and a circle), with round corners as a cutter needs. Each Bezier segment is
@@ -144,12 +145,17 @@ function flatten(segments, per = 8) {
 
 // True when the offset of a piece runs the same way as the piece. On the inside of a bend
 // tighter than the offset, the offset curve folds back on itself, and a band built from it would
-// cross itself (which makes Add fail for the whole selection).
+// cross itself (which makes Add fail for the whole selection). On a bend only a little looser
+// than the offset, the middle leg of the offset's control polygon can turn back while both end
+// legs still run the right way; that band has a tiny loop and breaks Add too (the inside bend
+// of a u did, at most offsets near 31 px), so all three legs are checked.
 function offsetHolds(s, e) {
     const dot = (a, b) => a.x * b.x + a.y * b.y;
     if (dot(sub(e[3], e[0]), sub(s[3], s[0])) <= 0)
         return false;
     if (len(sub(s[1], s[0])) > EPS && dot(sub(e[1], e[0]), sub(s[1], s[0])) < 0)
+        return false;
+    if (len(sub(s[2], s[1])) > EPS && dot(sub(e[2], e[1]), sub(s[2], s[1])) < 0)
         return false;
     if (len(sub(s[3], s[2])) > EPS && dot(sub(e[3], e[2]), sub(s[3], s[2])) < 0)
         return false;
@@ -190,6 +196,65 @@ function outermost(paths) {
         polys[i].length > 0 && !polys.some((other, j) => j != i && other.length > 2 && inside(polys[i][0], other)));
 }
 
+// For each path of a filled shape (each given as its segments), whether it is a hole: a path
+// enclosed by an odd number of the others.
+function holeFlags(paths) {
+    const polys = paths.map(p => flatten(p, 16));
+    return polys.map((poly, i) => poly.length > 2 &&
+        polys.filter((other, j) => j != i && other.length > 2 && inside(poly[0], other)).length % 2 == 1);
+}
+
+// How far `pt` is from the nearest edge of the polygon `poly`.
+function edgeDistance(pt, poly) {
+    let best = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[j], ab = sub(poly[i], a), ap = sub(pt, a);
+        const l2 = ab.x * ab.x + ab.y * ab.y;
+        const t = l2 > 0 ? Math.max(0, Math.min(1, (ap.x * ab.x + ap.y * ab.y) / l2)) : 0;
+        best = Math.min(best, len(sub(ap, { x: ab.x * t, y: ab.y * t })));
+    }
+    return best;
+}
+
+// True when every point inside the closed polygon `poly` lies within `r` of its edge, so growing
+// the edge inward by r fills it completely. Checked on a grid, with a margin of one grid step so
+// a point between the grid points can't be missed.
+function closesUp(poly, r) {
+    if (poly.length < 3)
+        return true;
+    const xs = poly.map(p => p.x), ys = poly.map(p => p.y);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const step = Math.max(r / 4, Math.hypot(x1 - x0, y1 - y0) / 200);
+    for (let x = x0; x <= x1; x += step)
+        for (let y = y0; y <= y1; y += step) {
+            const pt = { x, y };
+            if (inside(pt, poly) && edgeDistance(pt, poly) > r - step)
+                return false;
+        }
+    return true;
+}
+
+// A stroke's pressure profile as a function from how far along the path it is (0 to 1) to the
+// share of the line weight drawn there, read from the profile's Bezier segments (x along the
+// path, y the share). Null when the profile is flat at full weight, as on a plain stroke.
+function pressureFunction(segments) {
+    if (!segments.length || segments.every(s => s.every(p => Math.abs(p.y - 1) < 1e-6)))
+        return null;
+    return (x) => {
+        const seg = segments.find(s => x <= s[3].x) ?? segments[segments.length - 1];
+        // The profile runs left to right, so x rises with t: find x's t by halving.
+        let lo = 0, hi = 1;
+        for (let i = 0; i < 30; ++i) {
+            const mid = (lo + hi) / 2;
+            if (pointAt(seg, mid).x < x)
+                lo = mid;
+            else
+                hi = mid;
+        }
+        return Math.max(0, pointAt(seg, (lo + hi) / 2).y);
+    };
+}
+
 // STICKER-MATH-END
 
 const NAME = "Sticker outline";
@@ -215,11 +280,19 @@ function collectArt(node, out) {
             const align = String(node.strokeAlignment);
             strokeReach = /outside/i.test(align) ? node.lineWeight : /inside/i.test(align) ? 0 : node.lineWeight / 2;
         }
+        // A pressure profile (a tapered stroke, or a brush stroke drawn with a pen) makes the
+        // stroke narrower than its line weight along some of its length.
+        let pressure = null;
+        if (strokeReach > 0) {
+            const profile = node.lineStyleDescriptor?.pressure;
+            if (profile && !profile.isEmpty)
+                pressure = pressureFunction(segmentsOf(profile));
+        }
         for (let i = 0; i < ppc.polyCurveCount; ++i) {
             const poly = ppc.getTransformedPolyCurve(i);
             poly.transform(toSpread);
             if (poly.curveCount > 0 && (filled || strokeReach > 0))
-                out.push({ poly, filled, strokeReach });
+                out.push({ poly, filled, strokeReach, pressure });
         }
         return out;
     }
@@ -238,7 +311,11 @@ function segmentsOf(curve) {
 // `offset` (plus the stroke's reach) from the path. A filled shape's edges get a band on their
 // outside only (the inside is filled already); a stroke gets one each side. Where a band would
 // fold over itself, a rectangle along the piece's chord stands in for it.
-function stickerPieces(art, offset) {
+// A hole the offset fills completely anyway is left out of its shape, which goes in solid: that
+// replaces many bands and circles crowding into the hole, which can make Add fail (the counter of
+// an O did). With `fillHoles` (used only for the preview of pieces Add couldn't join), every
+// hole is left out that way.
+function stickerPieces(art, offset, fillHoles) {
     const { Curve, CurveBuilder, PolyCurve, Rectangle } = require('/geometry.js');
     const out = [];
     const single = (curve) => { const p = PolyCurve.create(); p.addCurve(curve); return p; };
@@ -274,15 +351,79 @@ function stickerPieces(art, offset) {
             .lineToXY(a.x, a.y).lineToXY(b.x, b.y).close().createCurve());
     };
     const angleBetween = (a, b) => Math.abs(Math.atan2(a.x * b.y - a.y * b.x, a.x * b.x + a.y * b.y));
-    for (const { poly, filled, strokeReach } of art) {
-        if (filled)
-            out.push(poly);
+    // A stroke with a pressure profile: everything within the offset plus the stroke's reach at
+    // that point along the path. Each short piece gets a four-sided band on each side of its
+    // chord, as wide at each end as the pressure there makes it and square to the path at each
+    // end, and a circle at each joint.
+    const tapered = (segments, closed, strokeReach, pressure) => {
+        const maxR = offset + strokeReach;
+        const pieces = [];
+        for (const seg of segments)
+            for (const s of shortPieces(seg, Math.PI / 24, Math.max(maxR / 2, 1)))
+                if (len(sub(s[3], s[0])) > EPS)
+                    pieces.push(s);
+        const total = pieces.reduce((t, s) => t + len(sub(s[3], s[0])), 0);
+        if (total < EPS)
+            return;
+        const reachAt = (d) => offset + strokeReach * pressure(Math.min(1, d / total));
+        let done = 0, lastCircle = null, lastR = 0;
+        for (const s of pieces) {
+            const l = len(sub(s[3], s[0]));
+            const r0 = reachAt(done), r1 = reachAt(done + l);
+            if (r0 > 0 && (!lastCircle || len(sub(s[0], lastCircle)) >= Math.min(r0, lastR) / 2)) {
+                push(circle(s[0], r0));
+                lastCircle = s[0];
+                lastR = r0;
+            }
+            // Each end of the band is square to the path there, not to the chord, so neighbouring
+            // bands share the very same edge. Edges at a sliver of an angle make Add fail.
+            const [d0, d2] = endTangents(s);
+            const n0 = normalOf(d0), n2 = normalOf(d2);
+            for (const k of [1, -1]) {
+                const a = along(s[3], n2, k * r1), b = along(s[0], n0, k * r0);
+                push(single(CurveBuilder.create().beginXY(s[0].x, s[0].y).lineToXY(s[3].x, s[3].y)
+                    .lineToXY(a.x, a.y).lineToXY(b.x, b.y).close().createCurve()));
+            }
+            done += l;
+        }
+        const endR = reachAt(total);
+        if (!closed && endR > 0)
+            push(circle(pieces[pieces.length - 1][3], endR));
+    };
+    for (const { poly, filled, strokeReach, pressure } of art) {
         const curves = poly.curves.toArray ? poly.curves.toArray() : [...poly.curves];
         const paths = curves.map(segmentsOf);
         const fillSigns = filled ? outwardSigns(paths) : null;
         // Each path reaches the offset past its edge, plus however far its stroke reaches.
         const r = offset + strokeReach;
+        // The holes to fill solid, and anything inside them: those paths are left out of the
+        // shape altogether, so the shape goes in already solid (a solid O). Adding a filled
+        // copy of the hole on top instead lays one curve exactly on another, which breaks Add.
+        let dropped = curves.map(() => false);
+        if (filled && !pressure) {
+            const holes = holeFlags(paths);
+            const polys = paths.map(p => flatten(p, 16));
+            const solid = curves.map((curve, ci) =>
+                curve.isClosed && holes[ci] && (fillHoles || closesUp(polys[ci], r)));
+            dropped = curves.map((_, ci) => solid[ci] ||
+                solid.some((s, hi) => s && hi != ci && polys[ci].length > 0 && inside(polys[ci][0], polys[hi])));
+        }
+        if (filled) {
+            if (dropped.some(d => d)) {
+                const kept = PolyCurve.create();
+                curves.forEach((curve, ci) => { if (!dropped[ci]) kept.addCurve(curve); });
+                out.push(kept);
+            }
+            else
+                out.push(poly);
+        }
         curves.forEach((curve, ci) => {
+            if (pressure) {
+                tapered(paths[ci], curve.isClosed, strokeReach, pressure);
+                return;
+            }
+            if (dropped[ci])
+                return;
             const closedFill = filled && curve.isClosed && fillSigns[ci] != 0;
             if (r <= 0)
                 return;
@@ -318,11 +459,77 @@ function stickerPieces(art, offset) {
     return out;
 }
 
-// The command that adds `polys` behind `target` as selected curve objects in one colour,
-// optionally joined with Add and named.
-function addBehindCommand(polys, target, colour, join) {
+// The sticker's outline as one PolyCurve in spread coordinates, or null if Add could not join
+// the pieces. Add only works on objects in the document, so the pieces are added and joined for
+// real, the result is read, and both steps are undone: the document ends as it started.
+// Add can fail on one exact offset and work a hair either side of it, so a failed join is tried
+// again at offsets a few hundredths of a pixel away, far too little to see.
+function stickerOutline(doc, art, target, offset, colour, fillHoles) {
+    for (const nudge of [0, 0.01, -0.01, 0.03, -0.03, 0.07]) {
+        const outline = joinedOutline(doc, art, target, Math.max(0.01, offset + nudge), colour, fillHoles);
+        if (outline)
+            return outline;
+    }
+    return null;
+}
+
+// The pieces are never selected, so the Node tool never draws their nodes. They go in behind
+// `target` unselected, then Add joins them by an explicit list of those nodes, and the same
+// command selects the artwork again so the joined curve isn't selected either. Both steps are
+// undone: the document ends as it started.
+function joinedOutline(doc, art, target, offset, colour, fillHoles) {
+    const { PolyCurve } = require('/geometry.js');
+    const { CompoundCommandBuilder, DocumentCommand } = require('/commands.js');
+    const { Selection } = require('/selections.js');
+    // The same pieces with Fill holes on or off: the holes are filled afterwards, by keeping
+    // only the outer edges of the joined result.
+    const pieces = stickerPieces(art, offset, false);
+    if (pieces.length == 0)
+        return null;
+    const selected = doc.selection.nodes.toArray();
+    const parent = parentOf(doc.spreads.current ?? doc.spreads.first, target);
+    if (!parent)
+        return null;
+    const count = [...parent.children].length;
+    // Behind the target means just before it in its container's child list.
+    const behind = () => {
+        const kids = [...parent.children];
+        const at = kids.findIndex(n => n.isSameNode(target));
+        return { kids, at };
+    };
+    doc.executeCommand(addPiecesCommand(pieces, target, colour), false);
+    let outline = null;
+    let steps = 1;
+    const added = behind();
+    if (added.kids.length == count + pieces.length && added.at >= pieces.length) {
+        const nodes = added.kids.slice(added.at - pieces.length, added.at);
+        const compound = CompoundCommandBuilder.create();
+        compound.addCommand(DocumentCommand.createBoolOpUnion(Selection.create(doc, nodes)));
+        compound.addCommand(DocumentCommand.createSetSelection(Selection.create(doc, selected)));
+        doc.executeCommand(compound.createCommand(), false);
+        steps = 2;
+        // Joined, the pieces are one node, just behind the target.
+        const joined = behind();
+        const node = joined.kids.length == count + 1 && joined.at >= 1 ? joined.kids[joined.at - 1] : null;
+        if (node && node.polyCurve) {
+            const curves = node.polyCurve.curves.toArray ? node.polyCurve.curves.toArray() : [...node.polyCurve.curves];
+            const keep = fillHoles ? outermost(curves.map(segmentsOf)) : curves.map((_, i) => i);
+            outline = PolyCurve.create();
+            for (const i of keep)
+                outline.addCurve(curves[i]);
+            outline.transform(node.baseToSpreadTransform);
+        }
+    }
+    for (let i = 0; i < steps; ++i)
+        doc.history.undo();
+    return outline;
+}
+
+// The command that adds `polys` behind `target` as curve objects in one colour, without
+// selecting them.
+function addPiecesCommand(polys, target, colour) {
     const { BlendMode } = require('affinity:common');
-    const { AddChildNodesCommandBuilder, CompoundCommandBuilder, DocumentCommand } = require('/commands.js');
+    const { AddChildNodesCommandBuilder } = require('/commands.js');
     const { InsertionMode } = require('/document.js');
     const { FillDescriptor } = require('/fills.js');
     const { LineStyleDescriptor } = require('/linestyle.js');
@@ -336,36 +543,19 @@ function addBehindCommand(polys, target, colour, join) {
     builder.setInsertionMode(InsertionMode.Behind);
     for (const poly of polys)
         builder.addNode(PolyCurveNodeDefinition.create(poly, fill, none, noLine, none));
-    const compound = CompoundCommandBuilder.create();
-    compound.addCommand(builder.createCommand(true));
-    if (join)
-        compound.addCommand(DocumentCommand.createBoolOpUnion(null));
-    compound.addCommand(DocumentCommand.createSetDescription(null, NAME));
-    return compound.createCommand();
+    return builder.createCommand(false);
 }
 
-// The sticker's outline as one PolyCurve in spread coordinates, or null if Add could not join
-// the pieces. Add only works on objects in the document, so the pieces are added and joined for
-// real, the result is read, and both steps are undone: the document ends as it started.
-function stickerOutline(doc, art, target, offset, colour, fillHoles) {
-    const { PolyCurve } = require('/geometry.js');
-    const pieces = stickerPieces(art, offset);
-    if (pieces.length == 0)
-        return null;
-    doc.executeCommand(addBehindCommand(pieces, target, colour, true), false);
-    const joined = doc.selection.nodes.toArray();
-    let outline = null;
-    if (joined.length == 1 && joined[0].polyCurve) {
-        const node = joined[0];
-        const curves = node.polyCurve.curves.toArray ? node.polyCurve.curves.toArray() : [...node.polyCurve.curves];
-        const keep = fillHoles ? outermost(curves.map(segmentsOf)) : curves.map((_, i) => i);
-        outline = PolyCurve.create();
-        for (const i of keep)
-            outline.addCurve(curves[i]);
-        outline.transform(node.baseToSpreadTransform);
+// The container that holds `node`, searching down from `root`.
+function parentOf(root, node) {
+    for (const child of root.children ?? []) {
+        if (child.isSameNode(node))
+            return root;
+        const found = parentOf(child, node);
+        if (found)
+            return found;
     }
-    doc.history.undo();
-    return outline;
+    return null;
 }
 
 // The selected node lowest in the stacking order, so the sticker goes behind all of the art.
@@ -420,22 +610,25 @@ function main() {
     const dlg = Dialog.create("Sticker Outline");
     const col = dlg.addColumn();
     const shape = col.addGroup("Outline");
-    const offset = shape.addUnitValueEditor("Offset", UnitType.Pixel, doc.units, Math.max(1, size / 25), 0)
+    // A default offset of a 25th of the selection's size, rounded to a whole pixel.
+    const offset = shape.addUnitValueEditor("Offset", UnitType.Pixel, doc.units, Math.max(1, Math.round(size / 25)), 0)
         .setNoMaxValue();
-    const holes = shape.addSwitch("Fill holes", true);
+    const holes = shape.addSwitch("Fill holes", false);
     const look = col.addGroup("Colour");
     const colour = look.addColourPicker("Colour", RGBA8(255, 255, 255, 255));
     dlg.initialWidth = 340;
 
     const fill = () => colour.value ?? RGBA8(255, 255, 255, 255);
-    // The preview is the joined pieces, shown without touching the document (holes are filled
-    // only on OK).
+    // The preview is the finished outline itself, joined the same way as on OK (without
+    // selecting anything), then shown as one unselected curve without touching the document.
+    // If Add can't join the pieces, they show unjoined.
     const preview = () => {
-        const pieces = stickerPieces(art, offset.value);
-        if (pieces.length)
-            doc.executeCommand(addBehindCommand(pieces, target, fill(), true), true);
-        else
-            doc.clearPreviews();
+        doc.clearPreviews();
+        const outline = stickerOutline(doc, art, target, offset.value, fill(), holes.value);
+        const polys = outline ? [outline] : stickerPieces(art, offset.value, holes.value);
+        if (polys.length == 0)
+            return;
+        doc.executeCommand(addPiecesCommand(polys, target, fill()), true);
     };
     dlg.onControlValueChangedHandler = preview;
     preview();
@@ -453,7 +646,7 @@ function main() {
 }
 
 // The command that groups `nodes` and adds `poly` (named NAME, in `colour`) as the bottom of
-// the new group. The group stays selected.
+// the new group, in one undo step. The group stays selected.
 function groupedCommand(doc, poly, nodes, colour) {
     const { BlendMode } = require('affinity:common');
     const { AddChildNodesCommandBuilder, CompoundCommandBuilder, DocumentCommand } = require('/commands.js');

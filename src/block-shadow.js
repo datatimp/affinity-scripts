@@ -2,7 +2,7 @@
 Block Shadow for Affinity: adds a solid, flat block shadow (a "long shadow") behind each selected
 object.
 
-Version 1.6
+Version 1.6.1
 Copyright (C) 2026 datatimp
 https://github.com/datatimp/affinity-scripts
 SPDX-License-Identifier: AGPL-3.0-or-later
@@ -172,11 +172,16 @@ function offsetPiece(s, r) {
 
 // True when the offset of a piece runs the same way as the piece. On the inside of a bend
 // tighter than the offset, the offset curve folds back on itself, and a band built from it would
-// cross itself (which makes Add fail for the whole selection).
+// cross itself (which makes Add fail for the whole selection). On a bend only a little looser
+// than the offset, the middle leg of the offset's control polygon can turn back while both end
+// legs still run the right way; that band has a tiny loop and breaks Add too, so all three legs
+// are checked.
 function offsetHolds(s, e) {
     if (dot(sub(e[3], e[0]), sub(s[3], s[0])) <= 0)
         return false;
     if (len(sub(s[1], s[0])) > EPS && dot(sub(e[1], e[0]), sub(s[1], s[0])) < 0)
+        return false;
+    if (len(sub(s[2], s[1])) > EPS && dot(sub(e[2], e[1]), sub(s[2], s[1])) < 0)
         return false;
     if (len(sub(s[3], s[2])) > EPS && dot(sub(e[3], e[2]), sub(s[3], s[2])) < 0)
         return false;
@@ -295,10 +300,11 @@ function collectOutlines(node, out) {
 // group in yet another group. Null otherwise.
 function shadowGroupOf(node) {
     const oldShadows = (group) => [...(group.children ?? [])].filter(c => c.description == NAME);
-    if (node.children && oldShadows(node).length)
+    // Only a group counts: a layer can hold a shadow too, once its group is ungrouped.
+    if (node.isGroupNode === true && oldShadows(node).length)
         return { group: node, old: oldShadows(node) };
     const parent = node.parent;
-    if (parent && !parent.isSpreadNode && oldShadows(parent).length)
+    if (parent?.isGroupNode === true && oldShadows(parent).length)
         return { group: parent, old: oldShadows(parent) };
     return null;
 }
