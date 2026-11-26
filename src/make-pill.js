@@ -53,6 +53,10 @@ Written against Affinity's scripting API (beta, Affinity 3.3).
 
 'use strict';
 
+// The script version, shown in its dialog title. Keep it the same as the Version line at the top
+// and the script name in Affinity.
+const VERSION = "1.0";
+
 // PILL-MATH-BEGIN (plain JavaScript, no Affinity APIs)
 
 // Boxes are {l, t, r, b} in spread pixels; y points down. Padding is {left, right, top, bottom}.
@@ -375,7 +379,7 @@ function main() {
     else
         source = newPillSource(doc, nodes);
 
-    const dlg = Dialog.create(refitting ? "Make Pill: Refit" : "Make Pill");
+    const dlg = Dialog.create(`${refitting ? "Make Pill: Refit" : "Make Pill"} v${VERSION}`);
     const col = dlg.addColumn();
     let textBox = null;
     if (!refitting)

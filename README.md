@@ -15,9 +15,6 @@ Affinity's scripting is in beta, so a future Affinity update may need a script u
 | [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.0 |
 | [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.2.1 |
 
-Block Shadow, Make Pill and Sticker Outline are in this repo. Rosette Halftone lives in its own [repo](https://github.com/datatimp/rosette-halftone/tree/main/affinity), next to
-the command-line tool whose dot math it shares.
-
 ## Install
 
 Each script comes two ways, and either one works:
@@ -161,16 +158,45 @@ its settings, so round ends stay round.
 ## Rosette Halftone
 
 Turns the selected object into a black halftone made of true vector circles, using the dot math of
-[Rosette](https://github.com/datatimp/rosette-halftone), a halftone tool for the command line. Every
-dot is an exact circle, so Affinity's vector tools keep working on the result, and a shape's edge
-never gets the border of heavy dots that Affinity's Live Halftone gives it.
+[Rosette](https://github.com/datatimp/rosette-halftone), a halftone tool for the command line. It
+doesn't rasterize the result or trace it: every dot is an exact ellipse at the size Rosette
+calculates.
 
-The dialog sets the cell size, screen angle, gamma and minimum dot size, with a live preview, and
-makes the dots as one compound shape or as separate dots in a group.
+![Four steps in Affinity: draw a box, give it a gradient, run Rosette Halftone to get vector dots, then bend the dots with Affinity's warp tools.](images/rosette-script-demo.png)
 
-Its `.afscript` file, JavaScript and full instructions are in the
-[`affinity`](https://github.com/datatimp/rosette-halftone/tree/main/affinity) folder of the
-rosette-halftone repo. It installs the same two ways as the scripts here.
+Because the dots are real shapes, Affinity's vector tools keep working on them: the warp in step 4
+was made with Affinity's warp tools, straight from the script's dots.
+
+1. Select one object: a shape, a gradient, a placed image or a group. To halftone several objects
+   together, group them first.
+2. Run **Rosette Halftone**. The dialog previews the dots live on the canvas:
+   - **Cell size:** the distance between dot centers.
+   - **Angle:** the screen angle; 45° is the usual angle for black.
+   - **Gamma:** above 1 opens up the highlights (smaller dots in light areas); below 1 makes
+     the dots heavier. 1.5 is Rosette's default.
+   - **Minimum dot (%):** the smallest dot drawn in any inked area, as a percentage of the largest
+     dot. White stays bare paper either way.
+   - **Dots as:** one compound shape (lightest, easiest to recolor) or separate dots in a group.
+3. Click **OK**. The dots are added above the object, named "Rosette halftone", in one undo step.
+   The object itself is unchanged; hide or delete it if you only want the dots.
+
+**How it works:** the script renders the object to pixels in memory, with its fills and effects as
+they show on the canvas, without changing the document. Very large art is rendered at a reduced
+scale, up to about 4 million pixels, which keeps it fast. Then it runs Rosette's math:
+
+- a Gaussian blur of half a cell,
+- a square grid rotated to the screen angle and centered on the object,
+- one sample per dot, with gamma, and
+- a dot whose area grows with the ink, up to 0.47 of a cell so that dots never touch.
+
+Transparent areas count as white paper, and the image's edge is extended rather than faded. So a
+shape's edge never gets a border of heavy dots, unlike Affinity's Live Halftone filter.
+
+**Limits:**
+
+- Black only. CMYK plates are planned.
+- It runs once. To change the settings, undo and run it again.
+- Colors are read as brightness: a color's lightness decides the dot size.
 
 ## Sticker Outline
 
@@ -221,20 +247,41 @@ that sat between them ends up outside the group. That's how Affinity's own Group
 
 ## Repo layout
 
-This layout covers Block Shadow, Make Pill and Sticker Outline; Rosette Halftone's files are in
-its own repo.
-
 ```
 affinity-scripts/
 ├── afscript/   scripts exported from Affinity, ready to import
 ├── src/        the same scripts as JavaScript source
+├── test/       tests for the scripts' math, run in Node
+├── images/     images for this README
 ├── LICENSE
 ├── README.md
 └── ROADMAP.md  planned changes and what they're waiting on
 ```
 
 The JavaScript in `src/` is the source: a change is made there first, then pasted into Affinity
-and exported again to `afscript/`. Each script's version is in the comment at the top of its file.
+and exported again to `afscript/`. Each script's version is in the comment at the top of its file, and
+again in `VERSION` just below, which shows in its dialog title.
+
+## Tests
+
+Rosette Halftone's dot math is checked against Rosette's Python, so the two stay in step. From the
+repo root:
+
+```bash
+node --test
+```
+
+`test/rosette-halftone/fixture.json` holds the Python's dots for a few test cases. After changing
+Rosette's dot math, regenerate it with Rosette's Python, from PyPI (`pip install rosette-halftone`)
+or a checkout of the [rosette-halftone](https://github.com/datatimp/rosette-halftone) repo, and
+commit it:
+
+```bash
+python test/rosette-halftone/make_fixture.py
+```
+
+With a checkout instead of the PyPI package, point Python at its source first:
+`PYTHONPATH=../rosette-halftone/src python test/rosette-halftone/make_fixture.py`.
 
 ## License
 

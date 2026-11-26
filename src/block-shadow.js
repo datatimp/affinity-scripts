@@ -40,6 +40,10 @@ Written against Affinity's scripting API (beta, Affinity 3.3).
 
 'use strict';
 
+// The script version, shown in its dialog title. Keep it the same as the Version line at the top
+// and the script name in Affinity.
+const VERSION = "1.6.1";
+
 // BLOCK-SHADOW-MATH-BEGIN (plain JavaScript, no Affinity APIs)
 
 // Points are {x, y}; a cubic Bezier segment is an array of four points [start, c1, c2, end].
@@ -488,7 +492,7 @@ function main() {
         size = Math.max(size, box.width, box.height);
     }
 
-    const dlg = Dialog.create("Block Shadow");
+    const dlg = Dialog.create(`Block Shadow v${VERSION}`);
     const col = dlg.addColumn();
     const shape = col.addGroup("Shadow");
     const depth = shape.addUnitValueEditor("Depth", UnitType.Pixel, doc.units,
