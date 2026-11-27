@@ -1,7 +1,7 @@
 /*
 Rosette Halftone for Affinity: turns the selected object into a black halftone of true vector dots.
 
-Version 1.1
+Version 1.2
 Copyright (C) 2026 datatimp
 https://github.com/datatimp/affinity-scripts
 SPDX-License-Identifier: AGPL-3.0-or-later
@@ -16,6 +16,9 @@ each dot centre, gamma, and an area-proportional radius capped at 0.47 of a cell
 areas count as white paper, so a shape's own edge never draws dots (Affinity's Live Halftone
 treats it as dark).
 
+"Dots can touch" is this script's own option, not Rosette's: the dots grow past touching, up to
+solid black at full ink, so dark areas print dark instead of stopping at about 69% coverage.
+
 Written against Affinity's scripting API (beta, Affinity 3.3).
 */
 
@@ -23,13 +26,40 @@ Written against Affinity's scripting API (beta, Affinity 3.3).
 
 // The script version, shown in its dialog title. Keep it the same as the Version line at the top
 // and the script name in Affinity.
-const VERSION = "1.1";
+const VERSION = "1.2";
 
 // ROSETTE-MATH-BEGIN (plain JavaScript, no Affinity APIs: test/rosette-halftone/math.test.js runs it in Node)
 
 // Maximum dot radius as a fraction of the cell, as in Rosette: below 0.5 so neighbouring dots
 // never touch, which keeps a compound shape of dots from merging into blobs.
 const MAX_R_FACTOR = 0.47;
+
+// With "Dots can touch", the largest dot reaches the cell's corners (half its diagonal), so full
+// ink is solid black. Not in Rosette: an option of this script only.
+const TOUCH_MAX_R_FACTOR = Math.SQRT1_2;
+
+// The share of a cell a dot of radius `r` (in cells) covers, counting only the part inside its own
+// cell: past r = 0.5 the dot overlaps its four neighbours, and the overlap is already theirs.
+function cellCoverage(r) {
+    const area = Math.PI * r * r;
+    if (r <= 0.5)
+        return area;
+    const segment = r * r * Math.acos(0.5 / r) - 0.5 * Math.sqrt(r * r - 0.25);
+    return Math.min(1, area - 4 * segment);
+}
+
+// The radius (in cells, up to TOUCH_MAX_R_FACTOR) whose dot covers `coverage` (0–1) of its cell.
+function radiusForCoverage(coverage) {
+    let lo = 0, hi = TOUCH_MAX_R_FACTOR;
+    for (let i = 0; i < 40; ++i) {
+        const mid = (lo + hi) / 2;
+        if (cellCoverage(mid) < coverage)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    return (lo + hi) / 2;
+}
 
 // Ink below one 8-bit step counts as bare paper and gets no dot, even with a minimum dot size.
 const WHITE_CUTOFF = 1 / 255;
@@ -139,15 +169,18 @@ function sampleBilinear(arr, w, h, x, y) {
 
 // Dots {x, y, r} in pixels of the density image: Rosette's rotated grid (halftone.py, _iter_dots)
 // over the image's diagonal, centred on the image, keeping dots whose centre lies on the image.
-// `minRadius` is a fraction (0–1) of the largest dot, as Rosette's --min-radius.
+// `minRadius` is a fraction (0–1) of the largest dot, as Rosette's --min-radius. With `canTouch`,
+// dots grow past touching until full ink is solid black, each covering as much of its cell as the
+// ink calls for.
 function computeDots(density, w, h, opts) {
-    const { cellPx, angleDeg, gamma, minRadius } = opts;
+    const { cellPx, angleDeg, gamma, minRadius, canTouch } = opts;
     const factor = Math.max(1, Math.floor(cellPx / PIXELS_PER_CELL));
     const small = downsample(density, w, h, factor);
     const blurred = gaussianBlur(small.data, small.w, small.h, cellPx / 2 / factor);
 
-    const maxR = cellPx * MAX_R_FACTOR;
+    const maxR = cellPx * (canTouch ? TOUCH_MAX_R_FACTOR : MAX_R_FACTOR);
     const rMin = Math.min(1, Math.max(0, minRadius)) * maxR;
+    const minCoverage = cellCoverage(rMin / cellPx);
     const rad = angleDeg * Math.PI / 180;
     const cosA = Math.cos(rad), sinA = Math.sin(rad);
     const halfGrid = Math.hypot(w, h);
@@ -166,7 +199,9 @@ function computeDots(density, w, h, opts) {
             if (d < WHITE_CUTOFF)
                 continue;
             const curved = gamma == 1 ? d : Math.pow(d, gamma);
-            const r = Math.sqrt(Math.max(0, curved * (maxR * maxR - rMin * rMin) + rMin * rMin));
+            const r = canTouch
+                ? cellPx * radiusForCoverage(curved * (1 - minCoverage) + minCoverage)
+                : Math.sqrt(Math.max(0, curved * (maxR * maxR - rMin * rMin) + rMin * rMin));
             if (r < 0.05)
                 continue;
             dots.push({ x: px, y: py, r });
@@ -198,15 +233,15 @@ function readPixels(node) {
 
 const MAX_RENDER_PIXELS = 4e6;
 
-// The command that adds the dots for `settings` ({cell, angle, gamma, minDot, separate}, cell in
-// document units, minDot in percent) above the selection, named "Rosette halftone", as one undo
-// step. Null when there are no dots to draw.
+// The command that adds the dots for `settings` ({cell, angle, gamma, minDot, canTouch, separate},
+// cell in document units, minDot in percent) above the selection, named "Rosette halftone", as one
+// undo step. Null when there are no dots to draw.
 function dotsCommand(source, settings) {
     const { BlendMode } = require('affinity:common');
     const { SVG11 } = require('/colours.js');
     const { AddChildNodesCommandBuilder, CompoundCommandBuilder, DocumentCommand } = require('/commands.js');
     const { FillDescriptor } = require('/fills.js');
-    const { Curve, PolyCurve, Rectangle } = require('/geometry.js');
+    const { Curve, PolyCurve, Rectangle, WindingOrder } = require('/geometry.js');
     const { LineStyleDescriptor } = require('/linestyle.js');
     const { PolyCurveNodeDefinition } = require('/nodes.js');
 
@@ -219,6 +254,7 @@ function dotsCommand(source, settings) {
         angleDeg: settings.angle,
         gamma: settings.gamma,
         minRadius: settings.minDot / 100,
+        canTouch: settings.canTouch,
     });
     if (dots.length == 0)
         return null;
@@ -239,7 +275,12 @@ function dotsCommand(source, settings) {
         const def = PolyCurveNodeDefinition.create(poly, ink, none, noLine, none);
         def.userDescription = "Rosette halftone";
         builder.addNode(def);
-        return builder.createCommand(true);
+        // Affinity fills a compound shape odd-even by default, which cuts a hole wherever two dots
+        // overlap. Non-zero fills the overlaps, so dots that touch merge into solid ink.
+        return CompoundCommandBuilder.create()
+            .addCommand(builder.createCommand(true))
+            .addCommand(DocumentCommand.createSetWindingMode(null, WindingOrder.NonZero))
+            .createCommand();
     }
     // Separate dots: add them selected, then group the selection and name the group.
     for (const d of dots) {
@@ -283,6 +324,7 @@ function main() {
         .setPrecision(2).setShowPopupSlider(true);
     const minDot = tone.addUnitValueEditor("Minimum dot (%)", UnitType.Number, UnitType.Number, 0, 0, 100)
         .setPrecision(0).setShowPopupSlider(true);
+    const canTouch = tone.addCheckBox("Dots can touch", false);
     const output = col.addGroup("Output");
     const shape = output.addButtonSet("Dots as", ["One compound shape", "Separate dots"], 0);
     dlg.initialWidth = 380;
@@ -290,7 +332,7 @@ function main() {
     const update = (preview) => {
         const cmd = dotsCommand(source, {
             cell: cell.value, angle: angle.value, gamma: gamma.value, minDot: minDot.value,
-            separate: shape.selectedIndex == 1,
+            canTouch: canTouch.value, separate: shape.selectedIndex == 1,
         });
         if (cmd)
             doc.executeCommand(cmd, preview);

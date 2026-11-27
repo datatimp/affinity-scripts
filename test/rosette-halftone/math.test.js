@@ -19,7 +19,7 @@ function loadMath() {
     const after = src.split('// ROSETTE-MATH-BEGIN')[1];
     const block = after.slice(after.indexOf('\n')).split('// ROSETTE-MATH-END')[0];
     const context = {};
-    vm.runInNewContext(`${block}; this.math = { densityFromPixels, computeDots, MAX_R_FACTOR };`, context);
+    vm.runInNewContext(`${block}; this.math = { densityFromPixels, computeDots, cellCoverage, MAX_R_FACTOR };`, context);
     return context.math;
 }
 
@@ -95,6 +95,18 @@ test('a white-to-black gradient grows the dots from left to right, with no heavy
         const expected = maxR * Math.sqrt(d.x / w);
         assert.ok(Math.abs(d.r - expected) < 0.35 * maxR, `dot at ${d.x.toFixed(1)},${d.y.toFixed(1)} radius ${d.r.toFixed(2)}, expected about ${expected.toFixed(2)}`);
     }
+});
+
+test('with dots that can touch, black is solid and grey covers its share of each cell', () => {
+    // Not Rosette's math: "Dots can touch" is the script's own option.
+    const opts = { cellPx: 8, angleDeg: 45, gamma: 1, minRadius: 0, canTouch: true };
+    const black = math.computeDots(math.densityFromPixels(image(80, 80, 0), 80, 80, 'RGBA8'), 80, 80, opts);
+    // Half the cell's diagonal: the dots reach the cell corners, with no paper left between them.
+    assert.ok(black.every(d => Math.abs(d.r / 8 - Math.SQRT1_2) < 1e-6));
+    // 90% ink: dots overlap their neighbours, and what each adds inside its own cell is 90%.
+    const grey = math.computeDots(math.densityFromPixels(image(80, 80, 255 - 230), 80, 80, 'RGBA8'), 80, 80, opts);
+    const ink = 230 / 255;
+    assert.ok(grey.every(d => d.r / 8 > 0.5 && Math.abs(math.cellCoverage(d.r / 8) - ink) < 1e-6));
 });
 
 test('premultiplied and straight half-transparent black give the same ink', () => {

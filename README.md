@@ -12,7 +12,7 @@ Affinity's scripting is in beta, so a future Affinity update may need a script u
 |---|---|---|
 | [Block Shadow](#block-shadow) | A solid, flat block shadow (a "long shadow") for each selected object | 1.6.1 |
 | [Make Pill](#make-pill) | A rounded pill with set padding around its text, or refits selected pills | 1.0 |
-| [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.0 |
+| [Rosette Halftone](#rosette-halftone) | Turns an object into a black halftone of true vector dots | 1.2 |
 | [Sticker Outline](#sticker-outline) | One solid, round-cornered sticker or die-cut shape around your artwork | 1.2.1 |
 
 ## Install
@@ -157,6 +157,8 @@ its settings, so round ends stay round.
 
 ## Rosette Halftone
 
+![The words "Pure Vector Halftones" beside a large letter "a" made of halftone dots that are solid in the middle and shrink toward its soft edges](images/rosette-halftone.webp)
+
 Turns the selected object into a black halftone made of true vector circles, using the dot math of
 [Rosette](https://github.com/datatimp/rosette-halftone), a halftone tool for the command line. It
 doesn't rasterize the result or trace it: every dot is an exact ellipse at the size Rosette
@@ -176,6 +178,10 @@ was made with Affinity's warp tools, straight from the script's dots.
      the dots heavier. 1.5 is Rosette's default.
    - **Minimum dot (%):** the smallest dot drawn in any inked area, as a percentage of the largest
      dot. White stays bare paper either way.
+   - **Dots can touch:** off by default. Normally the largest dot covers about 69% of its cell, so
+     solid black prints as a dark dot pattern. On, the dots grow until they merge, and full black
+     prints solid. Use it when the darks should stay dark. This is the script's own option; Rosette
+     doesn't have it.
    - **Dots as:** one compound shape (lightest, easiest to recolor) or separate dots in a group.
 3. Click **OK**. The dots are added above the object, named "Rosette halftone", in one undo step.
    The object itself is unchanged; hide or delete it if you only want the dots.
@@ -187,7 +193,8 @@ scale, up to about 4 million pixels, which keeps it fast. Then it runs Rosette's
 - a Gaussian blur of half a cell,
 - a square grid rotated to the screen angle and centered on the object,
 - one sample per dot, with gamma, and
-- a dot whose area grows with the ink, up to 0.47 of a cell so that dots never touch.
+- a dot whose area grows with the ink, up to 0.47 of a cell so that dots never touch (unless
+  **Dots can touch** is on).
 
 Transparent areas count as white paper, and the image's edge is extended rather than faded. So a
 shape's edge never gets a border of heavy dots, unlike Affinity's Live Halftone filter.
