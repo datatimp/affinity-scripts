@@ -264,10 +264,6 @@ affinity-scripts/
 └── ROADMAP.md  planned changes and what they're waiting on
 ```
 
-The JavaScript in `src/` is the source: a change is made there first, then pasted into Affinity
-and exported again to `afscript/`. Each script's version is in the comment at the top of its file, and
-again in `VERSION` just below, which shows in its dialog title.
-
 ## License
 
 [GNU Affero General Public License v3.0 or later](LICENSE). Copyright (C) 2026 datatimp.
