@@ -28,8 +28,6 @@ Written against Affinity's scripting API (beta, Affinity 3.3).
 // and the script name in Affinity.
 const VERSION = "1.2";
 
-// ROSETTE-MATH-BEGIN (plain JavaScript, no Affinity APIs: test/rosette-halftone/math.test.js runs it in Node)
-
 // Maximum dot radius as a fraction of the cell, as in Rosette: below 0.5 so neighbouring dots
 // never touch, which keeps a compound shape of dots from merging into blobs.
 const MAX_R_FACTOR = 0.47;
@@ -209,8 +207,6 @@ function computeDots(density, w, h, opts) {
     }
     return dots;
 }
-
-// ROSETTE-MATH-END
 
 // Renders the object to RGBA8 pixels, as it appears with its fills and effects, without changing
 // the document. Returns {density, w, h, box}: the ink of every pixel and the document rectangle

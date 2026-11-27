@@ -258,7 +258,6 @@ that sat between them ends up outside the group. That's how Affinity's own Group
 affinity-scripts/
 ├── afscript/   scripts exported from Affinity, ready to import
 ├── src/        the same scripts as JavaScript source
-├── test/       tests for the scripts' math, run in Node
 ├── images/     images for this README
 ├── LICENSE
 ├── README.md
@@ -268,27 +267,6 @@ affinity-scripts/
 The JavaScript in `src/` is the source: a change is made there first, then pasted into Affinity
 and exported again to `afscript/`. Each script's version is in the comment at the top of its file, and
 again in `VERSION` just below, which shows in its dialog title.
-
-## Tests
-
-Rosette Halftone's dot math is checked against Rosette's Python, so the two stay in step. From the
-repo root:
-
-```bash
-node --test
-```
-
-`test/rosette-halftone/fixture.json` holds the Python's dots for a few test cases. After changing
-Rosette's dot math, regenerate it with Rosette's Python, from PyPI (`pip install rosette-halftone`)
-or a checkout of the [rosette-halftone](https://github.com/datatimp/rosette-halftone) repo, and
-commit it:
-
-```bash
-python test/rosette-halftone/make_fixture.py
-```
-
-With a checkout instead of the PyPI package, point Python at its source first:
-`PYTHONPATH=../rosette-halftone/src python test/rosette-halftone/make_fixture.py`.
 
 ## License
 
